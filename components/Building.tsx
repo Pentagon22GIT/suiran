@@ -3,14 +3,15 @@
 import React, { useRef, useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { Button } from "@/components/ui/button"
+import { Button } from "@/components/ui/button";
 
-const SchoolBuilding: React.FC = () => {
+const BoxFocus: React.FC = () => {
     const mountRef = useRef<HTMLDivElement | null>(null);
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
     const controlsRef = useRef<OrbitControls | null>(null);
-    const buildingGroupRef = useRef<THREE.Group | null>(null);
-    const [currentFloor, setCurrentFloor] = useState<number | null>(null);
+    const boxGroupRef = useRef<THREE.Group | null>(null);
+    const [highlightedBox, setHighlightedBox] = useState<string | null>(null);
+    const boxMap = useRef<{ [key: string]: THREE.Mesh }>({});
 
     useEffect(() => {
         const width = mountRef.current?.clientWidth || window.innerWidth;
@@ -27,29 +28,31 @@ const SchoolBuilding: React.FC = () => {
             mountRef.current.appendChild(renderer.domElement);
         }
 
-        const buildingGroup = new THREE.Group();
-        buildingGroupRef.current = buildingGroup;
+        const boxGroup = new THREE.Group();
+        boxGroupRef.current = boxGroup;
 
-        const floorHeight = 1;
-        const floorColors = [0xFF5733, 0x33FF57, 0x3357FF, 0xFF33A1, 0xFFFF33];
-        const floorGeometries = [
-            new THREE.BoxGeometry(3, floorHeight, 2),
-            new THREE.BoxGeometry(3, floorHeight, 3),
-            new THREE.BoxGeometry(4, floorHeight, 2),
-            new THREE.BoxGeometry(3, floorHeight, 2.5),
-            new THREE.BoxGeometry(2.5, floorHeight, 3)
-        ];
+        // Box 1
+        const box1Geometry = new THREE.BoxGeometry(4, 4, 4);
+        const box1Material = new THREE.MeshBasicMaterial({ color: 0x3357FF, wireframe: true });
+        const box1 = new THREE.Mesh(box1Geometry, box1Material);
+        box1.position.set(-10, 0, 0);
+        const box1Name = "box-1";
+        box1.userData = { name: box1Name };
+        boxMap.current[box1Name] = box1;
+        boxGroup.add(box1);
 
-        for (let i = 0; i < 5; i++) {
-            const floorMaterial = new THREE.MeshBasicMaterial({ color: floorColors[i], wireframe: true });
-            const floor = new THREE.Mesh(floorGeometries[i], floorMaterial);
-            floor.position.y = i * floorHeight - 2;
-            floor.userData = { floor: i };
-            buildingGroup.add(floor);
-        }
+        // Box 2
+        const box2Geometry = new THREE.BoxGeometry(4, 4, 4);
+        const box2Material = new THREE.MeshBasicMaterial({ color: 0x3357FF, wireframe: true });
+        const box2 = new THREE.Mesh(box2Geometry, box2Material);
+        box2.position.set(10, 0, 0);
+        const box2Name = "box-2";
+        box2.userData = { name: box2Name };
+        boxMap.current[box2Name] = box2;
+        boxGroup.add(box2);
 
-        scene.add(buildingGroup);
-        camera.position.set(5, 5, 5);
+        scene.add(boxGroup);
+        camera.position.set(20, 20, 20);
 
         const controls = new OrbitControls(camera, renderer.domElement);
         controlsRef.current = controls;
@@ -58,6 +61,7 @@ const SchoolBuilding: React.FC = () => {
 
         const animate = () => {
             requestAnimationFrame(animate);
+            controls.update();
             renderer.render(scene, camera);
         };
 
@@ -83,33 +87,79 @@ const SchoolBuilding: React.FC = () => {
         }
     };
 
-    const zoomToFloor = (floor: number) => {
-        if (cameraRef.current && controlsRef.current && buildingGroupRef.current) {
-            const newCameraY = floor * 1 - 2 + 0.5;
-            const newTargetY = newCameraY;
-
+    const resetView = (callback?: () => void) => {
+        if (cameraRef.current && controlsRef.current) {
             const startPosition = cameraRef.current.position.clone();
             const startTarget = controlsRef.current.target.clone();
 
-            const zoomOutPosition = new THREE.Vector3(5, 5, 5);
-            const endPosition = new THREE.Vector3(3, newCameraY, 3);
-            const endTarget = new THREE.Vector3(0, newTargetY, 0);
+            const endPosition = new THREE.Vector3(20, 20, 20);
+            const endTarget = new THREE.Vector3(0, 0, 0);
 
-            animateZoom(startPosition, zoomOutPosition, startTarget, new THREE.Vector3(0, 0, 0), () => {
-                buildingGroupRef.current!.children.forEach((child) => {
-                    (child as THREE.Mesh).visible = true;
+            animateZoom(startPosition, endPosition, startTarget, endTarget, () => {
+                boxGroupRef.current!.children.forEach((child) => {
+                    const mesh = child as THREE.Mesh;
+                    mesh.visible = true;
+                    (mesh.material as THREE.MeshBasicMaterial).color.setHex(0x3357FF);
+                });
+                setHighlightedBox(null);
+                if (callback) callback();
+            });
+        }
+    };
+
+    const focusOnBox = (boxName: string) => {
+        if (cameraRef.current && controlsRef.current && boxGroupRef.current) {
+            const boxObject = boxMap.current[boxName];
+
+            if (!boxObject) {
+                console.error('Box object not found');
+                return;
+            }
+
+            const resetAndFocus = () => {
+                // 現在フォーカスされているボックスをリセット
+                if (highlightedBox) {
+                    const previousBoxObject = boxMap.current[highlightedBox];
+                    if (previousBoxObject) {
+                        (previousBoxObject.material as THREE.MeshBasicMaterial).color.setHex(0x3357FF);
+                    }
+                }
+
+                // 新たに選択されたボックスの色を変更
+                (boxObject.material as THREE.MeshBasicMaterial).color.setHex(0xff0000);
+
+                const boxPosition = boxObject.position.clone();
+                const cameraOffset = new THREE.Vector3(0, 5, 10); // Boxの前にカメラを配置するためのオフセット
+                const newCameraPosition = new THREE.Vector3(
+                    boxPosition.x + cameraOffset.x,
+                    boxPosition.y + cameraOffset.y,
+                    boxPosition.z + cameraOffset.z
+                );
+
+                const newTargetPosition = boxPosition.clone();
+
+                // 他方の箱を非表示にする
+                boxGroupRef.current!.children.forEach((child) => {
+                    if ((child as THREE.Mesh).userData.name !== boxName) {
+                        (child as THREE.Mesh).visible = false;
+                    }
                 });
 
-                setTimeout(() => {
-                    animateZoom(zoomOutPosition, endPosition, new THREE.Vector3(0, 0, 0), endTarget, () => {
-                        buildingGroupRef.current!.children.forEach((child, index) => {
-                            if (index !== floor) {
-                                (child as THREE.Mesh).visible = false;
-                            }
-                        });
-                    });
-                }, 500);
-            });
+                animateZoom(new THREE.Vector3(20, 20, 20), newCameraPosition, new THREE.Vector3(0, 0, 0), newTargetPosition, () => {
+                    setHighlightedBox(boxName);
+                });
+            };
+
+            if (highlightedBox) {
+                // 現在のフォーカスが異なる場合、すべてを表示してからフォーカス
+                boxGroupRef.current!.children.forEach((child) => {
+                    (child as THREE.Mesh).visible = true;
+                });
+                animateZoom(cameraRef.current.position.clone(), new THREE.Vector3(20, 20, 20), controlsRef.current.target.clone(), new THREE.Vector3(0, 0, 0), resetAndFocus);
+            } else {
+                // 直接フォーカス
+                resetAndFocus();
+            }
         }
     };
 
@@ -144,40 +194,19 @@ const SchoolBuilding: React.FC = () => {
         requestAnimationFrame(animate);
     };
 
-    const resetView = () => {
-        if (cameraRef.current && controlsRef.current && buildingGroupRef.current) {
-            const startPosition = cameraRef.current.position.clone();
-            const startTarget = controlsRef.current.target.clone();
-
-            const endPosition = new THREE.Vector3(5, 5, 5);
-            const endTarget = new THREE.Vector3(0, 0, 0);
-
-            animateZoom(startPosition, endPosition, startTarget, endTarget, () => {
-                buildingGroupRef.current!.children.forEach((child) => {
-                    (child as THREE.Mesh).visible = true;
-                });
-                setCurrentFloor(null);
-            });
-        }
-    };
-
-    useEffect(() => {
-        if (currentFloor !== null) {
-            zoomToFloor(currentFloor);
-        }
-    }, [currentFloor]);
-
     return (
         <div>
             <div ref={mountRef} style={{ width: '100vw', height: '100vh' }} />
             <div style={{ position: 'absolute', top: 10, left: 10 }}>
-                {[0, 1, 2, 3, 4].map(floor => (
-                    <Button key={floor} onClick={() => setCurrentFloor(floor)} variant="outline">Floor{floor + 1}</Button>
-                ))}
-                <Button onClick={resetView} variant="outline">Reset</Button>
+                <Button onClick={() => focusOnBox("box-1")} variant="outline">Focus on Box 1</Button>
+                <Button onClick={() => focusOnBox("box-2")} variant="outline">Focus on Box 2</Button>
+                <Button onClick={() => resetView()} variant="outline">Reset</Button>
+            </div>
+            <div style={{ position: 'absolute', top: 10, right: 10, color: 'white' }}>
+                <p>Highlighted Box: {highlightedBox !== null ? highlightedBox : 'None'}</p>
             </div>
         </div>
     );
 };
 
-export default SchoolBuilding;
+export default BoxFocus;

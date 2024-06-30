@@ -1,9 +1,9 @@
-import Building from '../components/Building';
+import BoxFocus from '../components/Building';
 
 export default function Home() {
     return (
         <div>
-            <Building />
+            <BoxFocus />
         </div>
     );
 }
